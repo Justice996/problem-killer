@@ -5,6 +5,15 @@ import {
   parseTime
 } from '../utils'
 import crypto from 'crypto'
+import {
+  createOrUpdateUser,
+  findUserByUsername,
+  getMockStore,
+  removeUser as removeLocalUser,
+  saveMockStore,
+  setCurrentUser,
+  setUserRegisterStatus
+} from '@/api/mock/local-auth'
 
 async function formatPsw(username, rawPsw) {
   if (rawPsw === passwordCache(username)) {
@@ -44,14 +53,29 @@ export function passwordCache(username) {
  */
 export async function login(params) {
   params.password = await formatPsw(params.username, params.password)
-  return request.post('account/login', params)
+  const user = findUserByUsername(params.username)
+  if (!user) {
+    return Promise.reject({ status: 21000, message: '账号不存在' })
+  }
+  if (user.status === 0) {
+    return Promise.reject({ status: 12440, message: '账号待审批' })
+  }
+  if (user.status === -1) {
+    return Promise.reject({ status: 12450, message: '账号审批被退回' })
+  }
+  setCurrentUser(user.id)
+  return Promise.resolve({
+    id: user.id,
+    username: user.username
+  })
 }
 
 /**
  * 登出
  */
 export function logout() {
-  return request.post('account/logout')
+  setCurrentUser(null)
+  return Promise.resolve(true)
 }
 
 /**
@@ -65,11 +89,10 @@ export function logout() {
  * } } params
  */
 export function removeAccount(params) {
-  return request({
-    method: 'DELETE',
-    url: 'Account/Remove',
-    data: params
-  })
+  const id = params && params.data && params.data.id
+  const ok = removeLocalUser(id)
+  if (!ok) return Promise.reject({ status: 404, message: '用户不存在' })
+  return Promise.resolve(true)
 }
 /**
  * 恢复用户
@@ -99,7 +122,9 @@ export function regnew(params) {
   // 注册接口暂时不使用加密
   // params.password = formatPsw(params.username, params.password)
   // params.confirmpassword = formatPsw(params.username, params.confirmpassword)
-  return request.post('account/register', params)
+  const result = createOrUpdateUser(params, { isNew: true })
+  if (!result.ok) return Promise.reject(result.error)
+  return Promise.resolve(result.data)
 }
 
 /**
@@ -107,10 +132,12 @@ export function regnew(params) {
  * @param {*} params
  */
 export async function accountPassword(params) {
-  params.newPassword = await formatPsw(params.id, params.newPassword)
-  params.confirmNewPassword = await formatPsw(params.id, params.confirmNewPassword)
-  params.oldPassword = await formatPsw(params.id, params.oldPassword)
-  return request.post('/account/password', params)
+  const store = getMockStore()
+  const user = store.users.find(i => i.id === params.id || i.username === params.id)
+  if (!user) return Promise.reject({ status: 404, message: '用户不存在' })
+  user.password = params.newPassword
+  saveMockStore(store)
+  return Promise.resolve(true)
 }
 
 /**
@@ -118,7 +145,10 @@ export async function accountPassword(params) {
  * @description 在account的api中用来验证用户是否登录，并且实时更新用户的基本信息
  */
 export function getUserInfo() {
-  return request.get('/users/base')
+  const store = getMockStore()
+  const user = store.users.find(i => i.id === store.currentUserId)
+  if (!user) return Promise.reject({ status: 401, message: '未登录' })
+  return Promise.resolve({ id: user.id, base: user.base })
 }
 
 /**
@@ -171,10 +201,9 @@ export function checkAuthCode(authByUserId, code, ignoreErr) {
  * @param {*} valid
  */
 export function authUserRegister(username, valid) {
-  return request.post('/account/authUserRegister', {
-    username,
-    valid
-  })
+  const ok = setUserRegisterStatus(username, valid)
+  if (!ok) return Promise.reject({ status: 404, message: '用户不存在' })
+  return Promise.resolve(true)
 }
 
 /**
@@ -188,7 +217,9 @@ export function modifyUser(params) {
   // 注册接口暂时不使用加密
   // params.password = formatPsw(params.username, params.password)
   // params.confirmpassword = formatPsw(params.username, params.confirmpassword)
-  return request.post('account/modifyUser', params)
+  const result = createOrUpdateUser(params, { isNew: false })
+  if (!result.ok) return Promise.reject(result.error)
+  return Promise.resolve(result.data)
 }
 
 export function signIn(signInId) {

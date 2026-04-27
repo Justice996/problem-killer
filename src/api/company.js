@@ -1,5 +1,6 @@
 import request from '@/utils/request'
 import { cached_data } from '@/utils/cache'
+import { getMockStore } from '@/api/mock/local-auth'
 const api = 'company'
 /**
  * 获取单位的子单位
@@ -13,6 +14,13 @@ const api = 'company'
  *      {string} list[i].code:""
  */
 export function companyChild(id) {
+  const store = getMockStore()
+  if (store && store.companies) {
+    const list = store.companies
+      .filter(i => (i.parent || null) === (id || null))
+      .map(i => ({ code: i.code, name: i.name }))
+    return Promise.resolve({ list })
+  }
   return request.get(`${api}/companyChild`, {
     params: {
       id: id
@@ -28,6 +36,11 @@ const urlCompanyDetail = `${api}/detail`
 * @param {*} id
 */
 export function companyDetail(id) {
+  const store = getMockStore()
+  if (store && store.companies) {
+    const model = store.companies.find(i => i.code === id)
+    if (model) return Promise.resolve({ model })
+  }
   return cached_data(`${urlCompanyDetail}/${id}`, () =>
     request.get(urlCompanyDetail, {
       params: {
@@ -117,6 +130,16 @@ export function dutiesDetail(name) {
  * @returns
  */
 export function dutiesQuery(name, tag, page) {
+  const store = getMockStore()
+  if (store && store.duties) {
+    const keyword = name || ''
+    const list = store.duties.filter(i => {
+      const matchName = i.name.indexOf(keyword) > -1
+      const matchTag = !tag || i.tag === tag
+      return matchName && matchTag
+    })
+    return Promise.resolve({ list })
+  }
   page = page || {
     pageSize: 50,
     pageIndex: 0
@@ -145,6 +168,12 @@ export function dutiesQuery(name, tag, page) {
  * @returns
  */
 export function dutiesTag(tagName) {
+  const store = getMockStore()
+  if (store && store.duties) {
+    const dict = {}
+    store.duties.forEach(i => { dict[i.tag] = true })
+    return Promise.resolve({ list: Object.keys(dict) })
+  }
   return request({
     url: 'company/dutiesTag',
     method: 'get',
@@ -164,6 +193,16 @@ export function dutiesTag(tagName) {
  * @returns
  */
 export function companyTitleQuery(name, tag, page) {
+  const store = getMockStore()
+  if (store && store.titles) {
+    const keyword = name || ''
+    const list = store.titles.filter(i => {
+      const matchName = i.name.indexOf(keyword) > -1
+      const matchTag = !tag || i.tag === tag
+      return matchName && matchTag
+    })
+    return Promise.resolve({ list })
+  }
   page = page || {
     pageSize: 20,
     pageIndex: 0

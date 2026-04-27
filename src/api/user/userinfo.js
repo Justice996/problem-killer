@@ -1,5 +1,13 @@
 import request from '@/utils/request'
 import { cached_data } from '@/utils/cache'
+import {
+  findUserByCid,
+  findUserById,
+  findUserByUsername,
+  getCurrentUser,
+  getMockStore,
+  saveMockStore
+} from '@/api/mock/local-auth'
 const api = 'users'
 const urlGetUserSummary = `${api}/summary`
 /**
@@ -11,6 +19,19 @@ const urlGetUserSummary = `${api}/summary`
  * @returns
  */
 export function getUserSummary(id, ignoreErr) {
+  const localUser = id ? findUserById(id) || findUserByUsername(id) : getCurrentUser()
+  if (localUser) {
+    return Promise.resolve({
+      id: localUser.id,
+      realName: localUser.realName,
+      companyCode: localUser.company && localUser.company.code,
+      companyName: localUser.company && localUser.company.name,
+      dutiesRawType: (localUser.duties && localUser.duties.name) || '',
+      about: '',
+      isInvalidAccount: localUser.status
+    })
+  }
+  if (id) return Promise.reject({ status: 404, message: '用户不存在' })
   const action = () =>
     request.get(urlGetUserSummary, {
       params: {
@@ -35,6 +56,14 @@ const urlGetUserBase = `${api}/base`
   ```
  */
 export function getUserBase(id, ignoreErr) {
+  const localUser = id ? findUserById(id) || findUserByUsername(id) : getCurrentUser()
+  if (localUser) {
+    return Promise.resolve({
+      id: localUser.id,
+      base: localUser.base || {}
+    })
+  }
+  if (id) return Promise.reject({ status: 404, message: '用户不存在' })
   return cached_data(`${urlGetUserBase}/${id}`, () =>
     request.get(urlGetUserBase, {
       params: {
@@ -46,6 +75,8 @@ export function getUserBase(id, ignoreErr) {
 }
 
 export function getUserDiy(id, ignoreErr) {
+  const localUser = id ? findUserById(id) || findUserByUsername(id) : getCurrentUser()
+  if (localUser) return Promise.resolve(localUser.diy || {})
   return request.get('users/diyinfo', {
     params: {
       id
@@ -67,6 +98,8 @@ export function getUserDiy(id, ignoreErr) {
 ```
  */
 export function getUserSocial(id, ignoreErr) {
+  const localUser = id ? findUserById(id) || findUserByUsername(id) : getCurrentUser()
+  if (localUser) return Promise.resolve(localUser.social || {})
   return request.get('users/social', {
     params: {
       id
@@ -86,6 +119,8 @@ export function getUserSocial(id, ignoreErr) {
 ```
  */
 export function getUserDuties(id, ignoreErr) {
+  const localUser = id ? findUserById(id) || findUserByUsername(id) : getCurrentUser()
+  if (localUser) return Promise.resolve(localUser.duties || {})
   return request.get('users/duties', {
     params: {
       id
@@ -102,6 +137,8 @@ export function getUserDuties(id, ignoreErr) {
  * @returns
  */
 export function getUserApplication(id, ignoreErr) {
+  const localUser = id ? findUserById(id) || findUserByUsername(id) : getCurrentUser()
+  if (localUser) return Promise.resolve(localUser.application || {})
   return request.get('users/application', {
     params: {
       id
@@ -125,6 +162,13 @@ export function getUserApplication(id, ignoreErr) {
  ```
  */
 export function getUserCompany(id, ignoreErr) {
+  const localUser = id ? findUserById(id) || findUserByUsername(id) : getCurrentUser()
+  if (localUser) {
+    return Promise.resolve({
+      company: localUser.company || {},
+      companyOfManage: localUser.companyOfManage || localUser.company || {}
+    })
+  }
   return request.get('users/company', {
     params: {
       id
@@ -142,36 +186,29 @@ export function getUserCompany(id, ignoreErr) {
  * @returns
  */
 export function getUserIdByCid(cid, ignoreErr) {
-  return request.get('/account/GetUserIdByCid', {
-    params: {
-      cid
-    },
-    ignoreError: ignoreErr
+  const localUser = findUserByCid(cid)
+  if (localUser) {
+    return Promise.resolve({
+      id: localUser.id,
+      base: localUser.base || {}
+    })
+  }
+  return Promise.reject({ status: 404, message: '用户不存在' })
+}
+
+export function getUserIdByRealName({ realName, pageIndex, pageSize, ignoreErr, fuzz }) {
+  const keyword = (realName || '').trim()
+  if (!keyword) return Promise.resolve({ total: 0, list: [] })
+  const users = getMockStore().users || []
+  const list = users.filter(i => i.realName && i.realName.indexOf(keyword) > -1).map(i => {
+    return { id: i.id, realName: i.realName }
+  })
+  return Promise.resolve({
+    total: list.length,
+    list
   })
 }
 
-/**
- *通过真实姓名查询身份号
- *
- * @export
- * @param {String} realName
- * @param {int} pageIndex
- * @param {int} pageSize
- * @param {Boolean} ignoreErr
- * @param {Boolean} fuzz
- * @returns
- */
-export function getUserIdByRealName({ realName, pageIndex, pageSize, ignoreErr, fuzz }) {
-  return request.get('/account/GetUserIdByRealName', {
-    params: {
-      realName,
-      pageIndex,
-      pageSize,
-      fuzz
-    },
-    ignoreError: ignoreErr
-  })
-}
 const url_getUserAvatar = `${api}/avatar`
 /**
  * 获取用户头像
@@ -182,6 +219,12 @@ const url_getUserAvatar = `${api}/avatar`
  * @returns
  */
 export function getUserAvatar(id, avatarId, ignoreErr) {
+  const localUser = id ? findUserById(id) || findUserByUsername(id) : getCurrentUser()
+  if (localUser) {
+    return Promise.resolve({
+      url: localUser.avatar || ''
+    })
+  }
   return cached_data(`${url_getUserAvatar}/${id}/${avatarId}`, () =>
     request.get(url_getUserAvatar, {
       params: {
@@ -192,6 +235,7 @@ export function getUserAvatar(id, avatarId, ignoreErr) {
     })
   )
 }
+
 /**
  *修改用户头像
  *
@@ -200,6 +244,14 @@ export function getUserAvatar(id, avatarId, ignoreErr) {
  * @returns
  */
 export function postUserAvatar(newAvatar, ignoreErr) {
+  const store = getMockStore()
+  const localUser = getCurrentUser()
+  if (localUser && store.users) {
+    const target = store.users.find(i => i.id === localUser.id)
+    if (target) target.avatar = newAvatar
+    saveMockStore(store)
+    return Promise.resolve({ url: newAvatar })
+  }
   return request.post('/users/avatar', {
     url: newAvatar
   }, {
